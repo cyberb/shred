@@ -1,14 +1,27 @@
 package shred
 
 import (
-	"crypto/rand"
 	"os"
 )
 
-func Shred(path string) error {
+type Shredder struct {
+	random RandomGenerator
+}
+
+type RandomGenerator interface {
+	Random() (byte, error)
+}
+
+func New(random RandomGenerator) *Shredder {
+	return &Shredder{
+		random: random,
+	}
+}
+
+func (s *Shredder) Shred(path string) error {
 	i := 0
 	for i < 3 {
-		err := WriteRandom(path)
+		err := s.WriteRandom(path)
 		if err != nil {
 			return err
 		}
@@ -17,7 +30,7 @@ func Shred(path string) error {
 	return os.Remove(path)
 }
 
-func WriteRandom(path string) error {
+func (s *Shredder) WriteRandom(path string) error {
 	file, err := os.OpenFile(path, os.O_RDWR, 0666)
 	if err != nil {
 		return err
@@ -30,7 +43,7 @@ func WriteRandom(path string) error {
 	size := stat.Size()
 	current := int64(0)
 	for current < size {
-		err := writeRandomBytes(file, current)
+		err := s.writeRandomBytes(file, current)
 		if err != nil {
 			return err
 		}
@@ -39,36 +52,27 @@ func WriteRandom(path string) error {
 	return nil
 }
 
-func writeRandomBytes(file *os.File, offset int64) error {
+func (s *Shredder) writeRandomBytes(file *os.File, offset int64) error {
 	actual := make([]byte, 1)
 	_, err := file.ReadAt(actual, offset)
 	if err != nil {
 		return err
 	}
 
-	buf, err := random(1)
+	rnd, err := s.random.Random()
 	if err != nil {
 		return err
 	}
-	for actual[0] == buf[0] {
-		buf, err = random(1)
+	for actual[0] == rnd {
+		rnd, err = s.random.Random()
 		if err != nil {
 			return err
 		}
 	}
 
-	_, err = file.WriteAt(buf, offset)
+	_, err = file.WriteAt([]byte{rnd}, offset)
 	if err != nil {
 		return err
 	}
 	return nil
-}
-
-func random(len int64) ([]byte, error) {
-	buf := make([]byte, len)
-	_, err := rand.Read(buf)
-	if err != nil {
-		return nil, err
-	}
-	return buf, nil
 }
